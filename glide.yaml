@@ -1,0 +1,6 @@
+package: github.com/projecteru2/minions
+import:
+- package: github.com/Sirupsen/logrus
+  version: ^1.0.5
+- package: github.com/codegangsta/cli
+  version: ^1.20.0

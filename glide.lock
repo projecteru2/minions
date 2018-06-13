@@ -1,0 +1,8 @@
+hash: 06d8e555ed9e28de14d28bc1461bbd8eea25d821a625161917d9300040d9dbdf
+updated: 2018-06-13T10:24:15.082539+08:00
+imports:
+- name: github.com/codegangsta/cli
+  version: cfb38830724cc34fedffe9a2a29fb54fa9169cd1
+- name: github.com/Sirupsen/logrus
+  version: c155da19408a8799da419ed3eeb0cb5db0ad5dbc
+testImports: []

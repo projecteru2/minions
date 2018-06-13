@@ -1,0 +1,13 @@
+minions
+eru-minions
+.ropeproject
+build.yaml
+*.pyc
+default.etcd/*
+vendor/*
+clean.sh
+.vscode/*
+*.test
+test*.py
+set*
+test.yaml
