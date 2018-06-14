@@ -326,29 +326,30 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 
 	if d.createProfiles {
 		// Now that we know the network name, set it on the endpoint.
-		endpoint.Spec.Profiles = append(endpoint.Spec.Profiles, networkData.Name)
+		endpoint.Spec.Profiles = append(endpoint.Spec.Profiles, networkName)
 
 		// Check if exists
-
-		// If a profile for the network name doesn't exist then it needs to be created.
-		// We always attempt to create the profile and rely on the datastore to reject
-		// the request if the profile already exists.
-		profile := &api.Profile{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: networkName,
-			},
-			Spec: api.ProfileSpec{
-				Egress: []api.Rule{{Action: "Allow"}},
-				Ingress: []api.Rule{{Action: "Allow",
-					Source: api.EntityRule{
-						Selector: fmt.Sprintf("has(%s)", networkName),
-					}}},
-			},
-		}
-		if _, err := d.client.Profiles().Create(context.Background(), profile, options.SetOptions{}); err != nil {
-			if _, ok := err.(libcalicoErrors.ErrorResourceAlreadyExists); !ok {
-				log.Errorln(err)
-				return nil, err
+		if _, err := d.client.Profiles().Get(context.Background(), networkName, options.GetOptions{}); err != nil {
+			// If a profile for the network name doesn't exist then it needs to be created.
+			// We always attempt to create the profile and rely on the datastore to reject
+			// the request if the profile already exists.
+			profile := &api.Profile{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: networkName,
+				},
+				Spec: api.ProfileSpec{
+					Egress: []api.Rule{{Action: "Allow"}},
+					Ingress: []api.Rule{{Action: "Allow",
+						Source: api.EntityRule{
+							Selector: fmt.Sprintf("has(%s)", networkName),
+						}}},
+				},
+			}
+			if _, err := d.client.Profiles().Create(context.Background(), profile, options.SetOptions{}); err != nil {
+				if _, ok := err.(libcalicoErrors.ErrorResourceAlreadyExists); !ok {
+					log.Errorln(err)
+					return nil, err
+				}
 			}
 		}
 	}
