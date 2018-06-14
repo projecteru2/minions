@@ -262,11 +262,12 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 	}
 
 	endpoint := api.NewWorkloadEndpoint()
-	endpoint.Spec.Node = hostname
 	endpoint.ObjectMeta.Namespace = hostname
+	endpoint.Name = fmt.Sprintf("%s-%s-%s-%s", hostname, d.orchestratorID, d.containerName, request.EndpointID)
+	endpoint.Spec.Endpoint = request.EndpointID
+	endpoint.Spec.Node = hostname
 	endpoint.Spec.Orchestrator = d.orchestratorID
 	endpoint.Spec.Workload = d.containerName
-	endpoint.Name = request.EndpointID
 	endpoint.Spec.InterfaceName = "cali" + request.EndpointID[:mathutils.MinInt(11, len(request.EndpointID))]
 	userProvidedMac := (request.Interface.MacAddress != "")
 	var mac net.HardwareAddr
@@ -299,23 +300,48 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 		return nil, err
 	}
 
+	pools, err := d.client.IPPools().List(context.Background(), options.ListOptions{})
+	if err != nil {
+		err = errors.Wrapf(err, "Network %v gather error", request.NetworkID)
+		log.Errorln(err)
+		return nil, err
+	}
+
+	f := false
+	networkName := ""
+	for _, p := range pools.Items {
+		if p.Spec.CIDR == networkData.IPAM.Config[0].Subnet {
+			f = true
+			networkName = p.ObjectMeta.Name
+			break
+		}
+	}
+	if !f {
+		err := errors.New("The requested subnet must match the CIDR of a " +
+			"configured Calico IP Pool.",
+		)
+		log.Errorln(err)
+		return nil, err
+	}
+
 	if d.createProfiles {
 		// Now that we know the network name, set it on the endpoint.
 		endpoint.Spec.Profiles = append(endpoint.Spec.Profiles, networkData.Name)
+
+		// Check if exists
 
 		// If a profile for the network name doesn't exist then it needs to be created.
 		// We always attempt to create the profile and rely on the datastore to reject
 		// the request if the profile already exists.
 		profile := &api.Profile{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: networkData.Name,
-				//Tags: []string{networkData.Name},
+				Name: networkName,
 			},
 			Spec: api.ProfileSpec{
-				Egress: []api.Rule{{Action: "allow"}},
-				Ingress: []api.Rule{{Action: "allow",
+				Egress: []api.Rule{{Action: "Allow"}},
+				Ingress: []api.Rule{{Action: "Allow",
 					Source: api.EntityRule{
-						Selector: fmt.Sprintf("has(%s)", networkData.Name),
+						Selector: fmt.Sprintf("has(%s)", networkName),
 					}}},
 			},
 		}
@@ -373,7 +399,7 @@ func (d NetworkDriver) DeleteEndpoint(request *network.DeleteEndpointRequest) er
 	if _, err = d.client.WorkloadEndpoints().Delete(
 		context.Background(),
 		hostname,
-		request.EndpointID,
+		fmt.Sprintf("%s-%s-%s-%s", hostname, d.orchestratorID, d.containerName, request.EndpointID),
 		options.DeleteOptions{}); err != nil {
 		err = errors.Wrapf(err, "Endpoint %v removal error", request.EndpointID)
 		log.Errorln(err)

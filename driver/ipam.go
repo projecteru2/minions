@@ -94,22 +94,31 @@ func (i IpamDriver) RequestPool(request *ipam.RequestPoolRequest) (*ipam.Request
 			return nil, err
 		}
 
-		//TODO check here
-		pools, err := poolsClient.List(
-			context.Background(),
-			options.ListOptions{
-				Name: ipNet.String(),
-			},
-		)
-		if err != nil || len(pools.Items) < 1 {
+		pools, err := poolsClient.List(context.Background(), options.ListOptions{})
+		if err != nil {
+			log.Errorln(err)
+			return nil, err
+		}
+
+		f := false
+		for _, p := range pools.Items {
+			if p.Spec.CIDR == ipNet.String() {
+				f = true
+				pool = p.Spec.CIDR
+				poolID = p.Name
+				break
+			}
+		}
+
+		if !f {
 			err := errors.New("The requested subnet must match the CIDR of a " +
 				"configured Calico IP Pool.",
 			)
 			log.Errorln(err)
 			return nil, err
 		}
-		pool = request.Pool
-		poolID = request.Pool
+
+		fmt.Println(pool, poolID)
 	}
 
 	// We use static pool ID and CIDR. We don't need to signal the
@@ -170,21 +179,20 @@ func (i IpamDriver) RequestAddress(request *ipam.RequestAddressRequest) (*ipam.R
 			numIPv6 = 1
 		} else {
 			poolsClient := i.client.IPPools()
-			_, ipNet, err := caliconet.ParseCIDR(request.PoolID)
+			ipPool, err := poolsClient.Get(context.Background(), request.PoolID, options.GetOptions{})
+			if err != nil {
+				err = errors.Wrapf(err, "Invalid Pool - %v", request.PoolID)
+				log.Errorln(err)
+				return nil, err
+			}
+
+			_, ipNet, err := caliconet.ParseCIDR(ipPool.Spec.CIDR)
 			if err != nil {
 				err = errors.Wrapf(err, "Invalid CIDR - %v", request.PoolID)
 				log.Errorln(err)
 				return nil, err
 			}
-			//TODO check
-			_, err = poolsClient.Get(context.Background(), ipNet.String(), options.GetOptions{})
-			if err != nil {
-				err := errors.New("The network references a Calico pool which " +
-					"has been deleted. Please re-instate the " +
-					"Calico pool before using the network.")
-				log.Errorln(err)
-				return nil, err
-			}
+
 			version = ipNet.Version()
 			if version == 4 {
 				poolV4 = []caliconet.IPNet{caliconet.IPNet{IPNet: ipNet.IPNet}}
