@@ -1,6 +1,21 @@
 package: github.com/projecteru2/minions
 import:
-- package: github.com/Sirupsen/logrus
+- package: github.com/sirupsen/logrus
   version: ^1.0.5
+  repo: git@github.com:Sirupsen/logrus.git
 - package: github.com/codegangsta/cli
   version: ^1.20.0
+- package: github.com/docker/go-plugins-helpers
+  subpackages:
+  - ipam
+  - network
+- package: github.com/projectcalico/libcalico-go
+  version: master
+- package: github.com/projectcalico/libnetwork-plugin
+  version: master
+  subpackages:
+  - utils
+- package: github.com/docker/docker
+  version: ^17.5.0-ce-rc3
+  subpackages:
+  - client
