@@ -17,5 +17,3 @@ import:
   - utils
 - package: github.com/docker/docker
   version: ^17.5.0-ce-rc3
-  subpackages:
-  - client

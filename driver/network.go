@@ -185,6 +185,7 @@ func (d NetworkDriver) CreateNetwork(request *network.CreateNetworkRequest) erro
 		}
 	}
 
+	ps := []string{}
 	for _, ipData := range request.IPv4Data {
 		// Older version of Docker have a bug where they don't provide the correct AddressSpace
 		// so we can't check for calico IPAM using our known address space.
@@ -197,6 +198,7 @@ func (d NetworkDriver) CreateNetwork(request *network.CreateNetworkRequest) erro
 			log.Errorln(err)
 			return err
 		}
+		ps = append(ps, ipData.Pool)
 	}
 
 	for _, ipData := range request.IPv6Data {
@@ -206,9 +208,36 @@ func (d NetworkDriver) CreateNetwork(request *network.CreateNetworkRequest) erro
 			log.Errorln(err)
 			return err
 		}
+		ps = append(ps, ipData.Pool)
 	}
 
 	logutils.JSONMessage("CreateNetwork response", map[string]string{})
+	return d.populatePoolLabel(ps, request.NetworkID)
+}
+
+func (d NetworkDriver) populatePoolLabel(pools []string, networkID string) error {
+	poolClient := d.client.IPPools()
+	ipPools, err := poolClient.List(context.Background(), options.ListOptions{})
+	if err != nil {
+		log.Errorln(err)
+		return err
+	}
+	for _, ipPool := range ipPools.Items {
+		for _, cidr := range pools {
+			if ipPool.Spec.CIDR == cidr {
+				ann := ipPool.GetAnnotations()
+				if ann == nil {
+					ann = map[string]string{}
+				}
+				ann[DOCKER_LABEL_PREFIX+"network.ID"] = networkID
+				ipPool.SetAnnotations(ann)
+				_, err = poolClient.Update(context.Background(), &ipPool, options.SetOptions{})
+				if err != nil {
+					log.Errorln(err)
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -263,7 +292,7 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 
 	endpoint := api.NewWorkloadEndpoint()
 	endpoint.ObjectMeta.Namespace = hostname
-	endpoint.Name = fmt.Sprintf("%s-%s-%s-%s", hostname, d.orchestratorID, d.containerName, request.EndpointID)
+	endpoint.Name = generateEndpointName(hostname, d.orchestratorID, d.containerName, request.EndpointID)
 	endpoint.Spec.Endpoint = request.EndpointID
 	endpoint.Spec.Node = hostname
 	endpoint.Spec.Orchestrator = d.orchestratorID
@@ -285,21 +314,6 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 		endpoint.Spec.IPNetworks = append(endpoint.Spec.IPNetworks, addr.String())
 	}
 
-	// Use the Docker API to fetch the network name (so we don't have to use an ID everywhere)
-	dockerCli, err := dockerClient.NewEnvClient()
-	if err != nil {
-		err = errors.Wrap(err, "Error while attempting to instantiate docker client from env")
-		log.Errorln(err)
-		return nil, err
-	}
-	defer dockerCli.Close()
-	networkData, err := dockerCli.NetworkInspect(context.Background(), request.NetworkID, false)
-	if err != nil {
-		err = errors.Wrapf(err, "Network %v inspection error", request.NetworkID)
-		log.Errorln(err)
-		return nil, err
-	}
-
 	pools, err := d.client.IPPools().List(context.Background(), options.ListOptions{})
 	if err != nil {
 		err = errors.Wrapf(err, "Network %v gather error", request.NetworkID)
@@ -310,10 +324,13 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 	f := false
 	networkName := ""
 	for _, p := range pools.Items {
-		if p.Spec.CIDR == networkData.IPAM.Config[0].Subnet {
-			f = true
-			networkName = p.ObjectMeta.Name
-			break
+		if nid, ok := p.Annotations[DOCKER_LABEL_PREFIX+"network.ID"]; ok {
+			if nid == request.NetworkID {
+				f = true
+				networkName = p.ObjectMeta.Name
+				log.Debugf("Find ippool : %v\n", p.Name)
+				break
+			}
 		}
 	}
 	if !f {
@@ -400,7 +417,7 @@ func (d NetworkDriver) DeleteEndpoint(request *network.DeleteEndpointRequest) er
 	if _, err = d.client.WorkloadEndpoints().Delete(
 		context.Background(),
 		hostname,
-		fmt.Sprintf("%s-%s-%s-%s", hostname, d.orchestratorID, d.containerName, request.EndpointID),
+		generateEndpointName(hostname, d.orchestratorID, d.containerName, request.EndpointID),
 		options.DeleteOptions{}); err != nil {
 		err = errors.Wrapf(err, "Endpoint %v removal error", request.EndpointID)
 		log.Errorln(err)
@@ -650,4 +667,8 @@ func getLabelPollTimeout() time.Duration {
 	}
 	log.Infof("Using custom label poll timeout: %s", labelPollTimeout)
 	return labelPollTimeout
+}
+
+func generateEndpointName(hostname, orchestratorID, containerName, endpointID string) string {
+	return fmt.Sprintf("%s-%s-%s-%s", hostname, orchestratorID, containerName, endpointID)
 }
