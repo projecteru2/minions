@@ -19,6 +19,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	dockertypes "github.com/docker/docker/api/types"
 	libcalicoErrors "github.com/projectcalico/libcalico-go/lib/errors"
 	"github.com/projectcalico/libcalico-go/lib/options"
 	logutils "github.com/projectcalico/libnetwork-plugin/utils/log"
@@ -424,7 +425,7 @@ func (d NetworkDriver) DeleteEndpoint(request *network.DeleteEndpointRequest) er
 		return err
 	}
 
-	logutils.JSONMessage("DeleteEndpoint response JSON=%v", map[string]string{})
+	logutils.JSONMessage("DeleteEndpoint response JSON={}", map[string]string{})
 
 	return err
 }
@@ -553,7 +554,7 @@ RETRY_NETWORK_INSPECT:
 	}
 
 	// inspect our custom network
-	networkData, err := dockerCli.NetworkInspect(context.Background(), networkID, false)
+	networkData, err := dockerCli.NetworkInspect(context.Background(), networkID, dockertypes.NetworkInspectOptions{})
 	if err != nil {
 		err = errors.Wrapf(err, "Error inspecting network %s - retrying (T=%s)", networkID, time.Since(start))
 		log.Warningln(err)

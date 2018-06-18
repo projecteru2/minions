@@ -1,5 +1,5 @@
-hash: 6e055da55f2f61174bd20fa15677745722f65943e89538f433319296642802c0
-updated: 2018-06-14T18:35:54.738541+08:00
+hash: def55a3ff6b2f7dbf98b914d2710f0d6c99cda926ca78d0a68dd5542c8af9c8a
+updated: 2018-06-18T15:32:09.733255+08:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -16,7 +16,7 @@ imports:
 - name: github.com/codegangsta/cli
   version: cfb38830724cc34fedffe9a2a29fb54fa9169cd1
 - name: github.com/coreos/etcd
-  version: 56536de5511128d0c7997aa2b792a4de575da536
+  version: 33245c6b5b49130ca99280408fadfab01aac0e48
   subpackages:
   - auth/authpb
   - client
@@ -43,7 +43,7 @@ imports:
   - digestset
   - reference
 - name: github.com/docker/docker
-  version: 90d35abf7b3535c1c319c872900fbd76374e521c
+  version: de0abf4315fd1d737aedc2e9f410c8125ad1a7fc
   subpackages:
   - api
   - api/types
@@ -57,14 +57,11 @@ imports:
   - api/types/registry
   - api/types/strslice
   - api/types/swarm
+  - api/types/swarm/runtime
   - api/types/time
   - api/types/versions
   - api/types/volume
   - client
-  - pkg/ioutils
-  - pkg/longpath
-  - pkg/system
-  - pkg/tlsconfig
 - name: github.com/docker/go-connections
   version: 3ede32e2033de7505e6500d6c868c2b9ed9f169d
   subpackages:
@@ -79,8 +76,6 @@ imports:
   - sdk
 - name: github.com/docker/go-units
   version: 0dadbb0345b35ec7ef35e228dabb8de89a65bf52
-- name: github.com/docker/libtrust
-  version: aabc10ec26b754e797f9028f4589c5b7bd90dc20
 - name: github.com/emicklei/go-restful
   version: 777bb3f19bcafe2575ffb2a3e46af92509ae9594
   subpackages:
@@ -161,6 +156,11 @@ imports:
   version: 78439966b38d69bf38227fbf57ac8a6fee70f69a
 - name: github.com/opencontainers/go-digest
   version: 279bed98673dd5bef374d3b6e4b09e2af76183bf
+- name: github.com/opencontainers/image-spec
+  version: e562b04403929d582d449ae5386ff79dd7961a11
+  subpackages:
+  - specs-go
+  - specs-go/v1
 - name: github.com/pborman/uuid
   version: ca53cad383cad2479bbba7f7a1a05797ec1386e4
 - name: github.com/peterbourgon/diskv
@@ -176,7 +176,7 @@ imports:
 - name: github.com/projectcalico/go-yaml-wrapper
   version: 598e54215bee41a19677faa4f0c32acd2a87eb56
 - name: github.com/projectcalico/libcalico-go
-  version: 4a4591ee358b14d728949e74c1d364f944d3e2f0
+  version: efdf8fede805a0669c5233bace020ae57f2e6c5b
   subpackages:
   - lib/apiconfig
   - lib/apis/v1
@@ -221,9 +221,6 @@ imports:
 - name: github.com/satori/go.uuid
   version: f58768cc1a7a7e77a3bd49e98cdd21419399b6a3
 - name: github.com/sirupsen/logrus
-  version: c155da19408a8799da419ed3eeb0cb5db0ad5dbc
-  repo: git@github.com:Sirupsen/logrus.git
-- name: github.com/Sirupsen/logrus
   version: c155da19408a8799da419ed3eeb0cb5db0ad5dbc
 - name: github.com/spf13/pflag
   version: 9ff6c6923cfffbcd502984b8e0c80539a94968b7
