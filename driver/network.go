@@ -26,6 +26,7 @@ import (
 	mathutils "github.com/projectcalico/libnetwork-plugin/utils/math"
 	"github.com/projectcalico/libnetwork-plugin/utils/netns"
 	osutils "github.com/projectcalico/libnetwork-plugin/utils/os"
+	netlink "github.com/vishvananda/netlink"
 )
 
 const (
@@ -40,7 +41,6 @@ type NetworkDriver struct {
 	client         clientv3.Interface
 	containerName  string
 	orchestratorID string
-	fixedMac       string
 
 	ifPrefix string
 
@@ -57,10 +57,6 @@ type NetworkDriver struct {
 func NewNetworkDriver(client clientv3.Interface) network.Driver {
 	driver := NetworkDriver{
 		client: client,
-
-		// The MAC address of the interface in the container is arbitrary, for
-		// simplicity, use a fixed MAC unless overridden by user.
-		fixedMac: "EE:EE:EE:EE:EE:EE",
 
 		// Orchestrator and container IDs used in our endpoint identification. These
 		// are fixed for libnetwork.  Unique endpoint identification is provided by
@@ -217,8 +213,9 @@ func (d NetworkDriver) CreateNetwork(request *network.CreateNetworkRequest) erro
 }
 
 func (d NetworkDriver) populatePoolLabel(pools []string, networkID string) error {
+	ctx := context.Background()
 	poolClient := d.client.IPPools()
-	ipPools, err := poolClient.List(context.Background(), options.ListOptions{})
+	ipPools, err := poolClient.List(ctx, options.ListOptions{})
 	if err != nil {
 		log.Errorln(err)
 		return err
@@ -232,7 +229,7 @@ func (d NetworkDriver) populatePoolLabel(pools []string, networkID string) error
 				}
 				ann[DOCKER_LABEL_PREFIX+"network.ID"] = networkID
 				ipPool.SetAnnotations(ann)
-				_, err = poolClient.Update(context.Background(), &ipPool, options.SetOptions{})
+				_, err = poolClient.Update(ctx, &ipPool, options.SetOptions{})
 				if err != nil {
 					log.Errorln(err)
 				}
@@ -250,6 +247,7 @@ func (d NetworkDriver) DeleteNetwork(request *network.DeleteNetworkRequest) erro
 func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*network.CreateEndpointResponse, error) {
 	logutils.JSONMessage("CreateEndpoint", request)
 
+	ctx := context.Background()
 	hostname, err := osutils.GetHostname()
 	if err != nil {
 		err = errors.Wrap(err, "Hostname fetching error")
@@ -299,23 +297,20 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 	endpoint.Spec.Orchestrator = d.orchestratorID
 	endpoint.Spec.Workload = d.containerName
 	endpoint.Spec.InterfaceName = "cali" + request.EndpointID[:mathutils.MinInt(11, len(request.EndpointID))]
-	userProvidedMac := (request.Interface.MacAddress != "")
 	var mac net.HardwareAddr
-	if userProvidedMac {
+	if request.Interface.MacAddress != "" {
 		if mac, err = net.ParseMAC(request.Interface.MacAddress); err != nil {
 			err = errors.Wrap(err, "Error parsing MAC address")
 			log.Errorln(err)
 			return nil, err
 		}
-	} else {
-		mac, _ = net.ParseMAC(d.fixedMac)
 	}
 	endpoint.Spec.MAC = mac.String()
 	for _, addr := range addresses {
 		endpoint.Spec.IPNetworks = append(endpoint.Spec.IPNetworks, addr.String())
 	}
 
-	pools, err := d.client.IPPools().List(context.Background(), options.ListOptions{})
+	pools, err := d.client.IPPools().List(ctx, options.ListOptions{})
 	if err != nil {
 		err = errors.Wrapf(err, "Network %v gather error", request.NetworkID)
 		log.Errorln(err)
@@ -347,7 +342,7 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 		endpoint.Spec.Profiles = append(endpoint.Spec.Profiles, networkName)
 
 		// Check if exists
-		if _, err := d.client.Profiles().Get(context.Background(), networkName, options.GetOptions{}); err != nil {
+		if _, err := d.client.Profiles().Get(ctx, networkName, options.GetOptions{}); err != nil {
 			// If a profile for the network name doesn't exist then it needs to be created.
 			// We always attempt to create the profile and rely on the datastore to reject
 			// the request if the profile already exists.
@@ -363,7 +358,7 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 						}}},
 				},
 			}
-			if _, err := d.client.Profiles().Create(context.Background(), profile, options.SetOptions{}); err != nil {
+			if _, err := d.client.Profiles().Create(ctx, profile, options.SetOptions{}); err != nil {
 				if _, ok := err.(libcalicoErrors.ErrorResourceAlreadyExists); !ok {
 					log.Errorln(err)
 					return nil, err
@@ -373,7 +368,7 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 	}
 
 	// Create the endpoint last to minimize side-effects if something goes wrong.
-	_, err = d.client.WorkloadEndpoints().Create(context.Background(), endpoint, options.SetOptions{})
+	_, err = d.client.WorkloadEndpoints().Create(ctx, endpoint, options.SetOptions{})
 	if err != nil {
 		err = errors.Wrapf(err, "Workload endpoints creation error, data: %+v", endpoint)
 		log.Errorln(err)
@@ -386,21 +381,8 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 		go d.populateWorkloadEndpointWithLabels(request.NetworkID, endpoint)
 	}
 
-	var endpointInterface network.EndpointInterface
-	if !userProvidedMac {
-		endpointInterface = network.EndpointInterface{
-			MacAddress: string(d.fixedMac),
-		}
-	} else {
-		// empty string indicates user provided MAC address.
-		endpointInterface = network.EndpointInterface{
-			MacAddress: "",
-		}
-	}
-	response := &network.CreateEndpointResponse{Interface: &endpointInterface}
-
+	response := &network.CreateEndpointResponse{Interface: &network.EndpointInterface{}}
 	logutils.JSONMessage("CreateEndpoint response", response)
-
 	return response, nil
 }
 
@@ -438,6 +420,7 @@ func (d NetworkDriver) EndpointInfo(request *network.InfoRequest) (*network.Info
 func (d NetworkDriver) Join(request *network.JoinRequest) (*network.JoinResponse, error) {
 	logutils.JSONMessage("Join", request)
 
+	ctx := context.Background()
 	// 1) Set up a veth pair
 	// 	The one end will stay in the host network namespace - named caliXXXXX
 	//	The other end is given a temporary name. It's moved into the final network namespace by libnetwork itself.
@@ -450,6 +433,30 @@ func (d NetworkDriver) Join(request *network.JoinRequest) (*network.JoinResponse
 		err = errors.Wrapf(
 			err, "Veth creation error, hostInterfaceName=%v, tempInterfaceName=%v, vethMTU=%v",
 			hostInterfaceName, tempInterfaceName, d.vethMTU)
+		log.Errorln(err)
+		return nil, err
+	}
+
+	// 2) update workloads
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Errorln(err)
+		return nil, err
+	}
+	weps := d.client.WorkloadEndpoints()
+	wep, err := weps.Get(ctx, hostname, generateEndpointName(hostname, d.orchestratorID, d.containerName, request.EndpointID), options.GetOptions{})
+	if err != nil {
+		log.Errorln(err)
+		return nil, err
+	}
+	tempNIC, err := netlink.LinkByName(tempInterfaceName)
+	if err != nil {
+		log.Errorln(err)
+		return nil, err
+	}
+	wep.Spec.MAC = tempNIC.Attrs().HardwareAddr.String()
+	_, err = weps.Update(ctx, wep, options.SetOptions{})
+	if err != nil {
 		log.Errorln(err)
 		return nil, err
 	}
@@ -532,6 +539,7 @@ func (d NetworkDriver) RevokeExternalConnectivity(*network.RevokeExternalConnect
 // container list in the NetworkInspect and make the Container available
 // for inspecting.
 func (d NetworkDriver) populateWorkloadEndpointWithLabels(networkID string, endpoint *api.WorkloadEndpoint) {
+	ctx := context.Background()
 	endpointID := endpoint.Name
 
 	retrySleep := time.Duration(100 * time.Millisecond)
@@ -554,7 +562,7 @@ RETRY_NETWORK_INSPECT:
 	}
 
 	// inspect our custom network
-	networkData, err := dockerCli.NetworkInspect(context.Background(), networkID, dockertypes.NetworkInspectOptions{})
+	networkData, err := dockerCli.NetworkInspect(ctx, networkID, dockertypes.NetworkInspectOptions{})
 	if err != nil {
 		err = errors.Wrapf(err, "Error inspecting network %s - retrying (T=%s)", networkID, time.Since(start))
 		log.Warningln(err)
@@ -602,7 +610,7 @@ RETRY_CONTAINER_INSPECT:
 		return
 	}
 
-	containerInfo, err := dockerCli.ContainerInspect(context.Background(), containerID)
+	containerInfo, err := dockerCli.ContainerInspect(ctx, containerID)
 	if err != nil {
 		err = errors.Wrapf(err, "Error inspecting container %s for labels - retrying (T=%s)", containerID, time.Since(start))
 		log.Warningln(err)
@@ -635,7 +643,7 @@ RETRY_CONTAINER_INSPECT:
 	}
 
 	// lets update the workloadEndpoint
-	_, err = d.client.WorkloadEndpoints().Update(context.Background(), endpoint, options.SetOptions{})
+	_, err = d.client.WorkloadEndpoints().Update(ctx, endpoint, options.SetOptions{})
 	if err != nil {
 		err = errors.Wrapf(err, "Unable to update WorkloadEndpoint with labels (T=%s)", time.Since(start))
 		log.Errorln(err)
