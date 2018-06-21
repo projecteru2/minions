@@ -368,7 +368,7 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 	}
 
 	// Create the endpoint last to minimize side-effects if something goes wrong.
-	_, err = d.client.WorkloadEndpoints().Create(ctx, endpoint, options.SetOptions{})
+	endpoint, err = d.client.WorkloadEndpoints().Create(ctx, endpoint, options.SetOptions{})
 	if err != nil {
 		err = errors.Wrapf(err, "Workload endpoints creation error, data: %+v", endpoint)
 		log.Errorln(err)
@@ -378,7 +378,7 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 	log.Debugf("Workload created, data: %+v\n", endpoint)
 
 	if d.labelEndpoints {
-		go d.populateWorkloadEndpointWithLabels(request.NetworkID, endpoint)
+		go d.populateWorkloadEndpointWithLabels(request, endpoint)
 	}
 
 	response := &network.CreateEndpointResponse{Interface: &network.EndpointInterface{}}
@@ -538,15 +538,18 @@ func (d NetworkDriver) RevokeExternalConnectivity(*network.RevokeExternalConnect
 // Above may take 1 or more retries, because Docker has to update the
 // container list in the NetworkInspect and make the Container available
 // for inspecting.
-func (d NetworkDriver) populateWorkloadEndpointWithLabels(networkID string, endpoint *api.WorkloadEndpoint) {
+func (d NetworkDriver) populateWorkloadEndpointWithLabels(request *network.CreateEndpointRequest, endpoint *api.WorkloadEndpoint) {
 	ctx := context.Background()
-	endpointID := endpoint.Name
+
+	networkID := request.NetworkID
+	endpointID := request.EndpointID
 
 	retrySleep := time.Duration(100 * time.Millisecond)
 
 	start := time.Now()
 	deadline := start.Add(d.labelPollTimeout)
 
+	os.Setenv("DOCKER_API_VERSION", "1.25")
 	dockerCli, err := dockerClient.NewEnvClient()
 	if err != nil {
 		err = errors.Wrap(err, "Error while attempting to instantiate docker client from env")
@@ -638,10 +641,16 @@ RETRY_CONTAINER_INSPECT:
 	}
 
 	if labelsFound == 0 {
-		log.Debugf("No labels found for container (T=%s)", endpointID, time.Since(start))
+		log.Debugf("No labels found for container (T=%s)", time.Since(start))
 		return
 	}
 
+	rev, err := strconv.Atoi(endpoint.ObjectMeta.ResourceVersion)
+	if err != nil {
+		log.Errorln(err)
+		return
+	}
+	endpoint.SetResourceVersion(fmt.Sprintf("%d", rev+1))
 	// lets update the workloadEndpoint
 	_, err = d.client.WorkloadEndpoints().Update(ctx, endpoint, options.SetOptions{})
 	if err != nil {
