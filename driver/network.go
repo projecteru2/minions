@@ -21,6 +21,7 @@ import (
 
 	dockertypes "github.com/docker/docker/api/types"
 	libcalicoErrors "github.com/projectcalico/libcalico-go/lib/errors"
+	wepname "github.com/projectcalico/libcalico-go/lib/names"
 	"github.com/projectcalico/libcalico-go/lib/options"
 	logutils "github.com/projectcalico/libnetwork-plugin/utils/log"
 	mathutils "github.com/projectcalico/libnetwork-plugin/utils/math"
@@ -289,9 +290,15 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 		addresses = append(addresses, caliconet.IPNet{IPNet: *ipnet})
 	}
 
+	wepName, err := d.generateEndpointName(hostname, request.EndpointID)
+	if err != nil {
+		log.Errorln(err)
+		return nil, err
+	}
+
 	endpoint := api.NewWorkloadEndpoint()
 	endpoint.ObjectMeta.Namespace = hostname
-	endpoint.Name = generateEndpointName(hostname, d.orchestratorID, d.containerName, request.EndpointID)
+	endpoint.Name = wepName
 	endpoint.Spec.Endpoint = request.EndpointID
 	endpoint.Spec.Node = hostname
 	endpoint.Spec.Orchestrator = d.orchestratorID
@@ -397,10 +404,16 @@ func (d NetworkDriver) DeleteEndpoint(request *network.DeleteEndpointRequest) er
 		return err
 	}
 
+	wepName, err := d.generateEndpointName(hostname, request.EndpointID)
+	if err != nil {
+		log.Errorln(err)
+		return err
+	}
+
 	if _, err = d.client.WorkloadEndpoints().Delete(
 		context.Background(),
 		hostname,
-		generateEndpointName(hostname, d.orchestratorID, d.containerName, request.EndpointID),
+		wepName,
 		options.DeleteOptions{}); err != nil {
 		err = errors.Wrapf(err, "Endpoint %v removal error", request.EndpointID)
 		log.Errorln(err)
@@ -444,7 +457,12 @@ func (d NetworkDriver) Join(request *network.JoinRequest) (*network.JoinResponse
 		return nil, err
 	}
 	weps := d.client.WorkloadEndpoints()
-	wep, err := weps.Get(ctx, hostname, generateEndpointName(hostname, d.orchestratorID, d.containerName, request.EndpointID), options.GetOptions{})
+	wepName, err := d.generateEndpointName(hostname, request.EndpointID)
+	if err != nil {
+		log.Errorln(err)
+		return nil, err
+	}
+	wep, err := weps.Get(ctx, hostname, wepName, options.GetOptions{})
 	if err != nil {
 		log.Errorln(err)
 		return nil, err
@@ -687,6 +705,11 @@ func getLabelPollTimeout() time.Duration {
 	return labelPollTimeout
 }
 
-func generateEndpointName(hostname, orchestratorID, containerName, endpointID string) string {
-	return fmt.Sprintf("%s-%s-%s-%s", hostname, orchestratorID, containerName, endpointID)
+func (d NetworkDriver) generateEndpointName(hostname, endpointID string) (string, error) {
+	wepNameIdent := wepname.WorkloadEndpointIdentifiers{
+		Node:         hostname,
+		Orchestrator: d.orchestratorID,
+		Endpoint:     endpointID,
+	}
+	return wepNameIdent.CalculateWorkloadEndpointName(false)
 }
