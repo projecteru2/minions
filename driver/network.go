@@ -36,12 +36,14 @@ const (
 	CREATE_PROFILES_ENVKEY    = "CALICO_LIBNETWORK_CREATE_PROFILES"
 	LABEL_ENDPOINTS_ENVKEY    = "CALICO_LIBNETWORK_LABEL_ENDPOINTS"
 	VETH_MTU_ENVKEY           = "CALICO_LIBNETWORK_VETH_MTU"
+	NAMESPACE_ENVKEY          = "CALICO_LIBNETWORK_NAMESPACE"
 )
 
 type NetworkDriver struct {
 	client         clientv3.Interface
 	containerName  string
 	orchestratorID string
+	namespace      string
 
 	ifPrefix string
 
@@ -56,6 +58,12 @@ type NetworkDriver struct {
 }
 
 func NewNetworkDriver(client clientv3.Interface) network.Driver {
+	hostname, err := osutils.GetHostname()
+	if err != nil {
+		err = errors.Wrap(err, "Hostname fetching error")
+		log.Fatal(err)
+	}
+
 	driver := NetworkDriver{
 		client: client,
 
@@ -64,6 +72,7 @@ func NewNetworkDriver(client clientv3.Interface) network.Driver {
 		// hostname and endpoint ID.
 		containerName:  "libnetwork",
 		orchestratorID: "libnetwork",
+		namespace:      hostname,
 
 		ifPrefix:         IFPrefix,
 		DummyIPV4Nexthop: "169.254.1.1",
@@ -73,6 +82,11 @@ func NewNetworkDriver(client clientv3.Interface) network.Driver {
 
 		// default: disabled, enable by setting env key to true (case insensitive)
 		labelEndpoints: strings.EqualFold(os.Getenv(LABEL_ENDPOINTS_ENVKEY), "true"),
+	}
+
+	ns := os.Getenv(NAMESPACE_ENVKEY)
+	if ns != "" {
+		driver.namespace = ns
 	}
 
 	// Check if MTU environment variable is given, parse into uint16
@@ -233,6 +247,7 @@ func (d NetworkDriver) populatePoolLabel(pools []string, networkID string) error
 				_, err = poolClient.Update(ctx, &ipPool, options.SetOptions{})
 				if err != nil {
 					log.Errorln(err)
+					return err
 				}
 			}
 		}
@@ -297,8 +312,9 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 	}
 
 	endpoint := api.NewWorkloadEndpoint()
-	endpoint.ObjectMeta.Namespace = hostname
 	endpoint.Name = wepName
+	//endpoint.ObjectMeta.Namespace = fmt.Sprintf("%s.%s", d.orchestratorID, networkName)
+	endpoint.ObjectMeta.Namespace = d.namespace
 	endpoint.Spec.Endpoint = request.EndpointID
 	endpoint.Spec.Node = hostname
 	endpoint.Spec.Orchestrator = d.orchestratorID
@@ -327,19 +343,15 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 	f := false
 	networkName := ""
 	for _, p := range pools.Items {
-		if nid, ok := p.Annotations[DOCKER_LABEL_PREFIX+"network.ID"]; ok {
-			if nid == request.NetworkID {
-				f = true
-				networkName = p.ObjectMeta.Name
-				log.Debugf("Find ippool : %v\n", p.Name)
-				break
-			}
+		if nid, ok := p.Annotations[DOCKER_LABEL_PREFIX+"network.ID"]; ok && nid == request.NetworkID {
+			f = true
+			networkName = p.ObjectMeta.Name
+			log.Debugf("Find ippool : %v\n", p.Name)
+			break
 		}
 	}
 	if !f {
-		err := errors.New("The requested subnet must match the CIDR of a " +
-			"configured Calico IP Pool.",
-		)
+		err := errors.New("The requested subnet must match the CIDR of a configured Calico IP Pool.")
 		log.Errorln(err)
 		return nil, err
 	}
@@ -411,10 +423,8 @@ func (d NetworkDriver) DeleteEndpoint(request *network.DeleteEndpointRequest) er
 	}
 
 	if _, err = d.client.WorkloadEndpoints().Delete(
-		context.Background(),
-		hostname,
-		wepName,
-		options.DeleteOptions{}); err != nil {
+		context.Background(), d.namespace,
+		wepName, options.DeleteOptions{}); err != nil {
 		err = errors.Wrapf(err, "Endpoint %v removal error", request.EndpointID)
 		log.Errorln(err)
 		return err
@@ -462,7 +472,7 @@ func (d NetworkDriver) Join(request *network.JoinRequest) (*network.JoinResponse
 		log.Errorln(err)
 		return nil, err
 	}
-	wep, err := weps.Get(ctx, hostname, wepName, options.GetOptions{})
+	wep, err := weps.Get(ctx, d.namespace, wepName, options.GetOptions{})
 	if err != nil {
 		log.Errorln(err)
 		return nil, err
