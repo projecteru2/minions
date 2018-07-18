@@ -13,4 +13,5 @@ FROM alpine:3.7
 
 MAINTAINER CMGS <ilskdw@gmail.com>
 
+RUN mkdir /etc/eru/
 COPY --from=BUILD /go/src/github.com/projecteru2/minions/eru-minions /usr/bin/eru-minions
