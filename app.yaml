@@ -12,7 +12,7 @@ stages:
   - pack
 builds:
   build:
-    base: "golang:1.10.3-alpine3.7"
+    base: "golang:1.10.3-alpine3.8"
     # only support ssh protocol
     repo: "git@github.com:projecteru2/minions.git"
     version: "HEAD"
@@ -25,7 +25,7 @@ builds:
     cache:
       /go/src/github.com/projecteru2/minions/eru-minions: /usr/bin/eru-minions
   pack:
-    base: alpine:3.7
+    base: alpine:3.8
     labels:
       ERU: 1
       version: latest
