@@ -652,6 +652,12 @@ RETRY_CONTAINER_INSPECT:
 
 	log.Debugf("Container inspected, processing labels now (T=%s)", time.Since(start))
 
+RETRY_UPDATE_ENDPOINT:
+	if time.Now().After(deadline) {
+		log.Errorf("Updating endpoint timed out. Took %s", time.Since(start))
+		return
+	}
+
 	// make sure we have a labels map in the workloadEndpoint
 	if endpoint.ObjectMeta.Labels == nil {
 		endpoint.ObjectMeta.Labels = map[string]string{}
@@ -673,18 +679,19 @@ RETRY_CONTAINER_INSPECT:
 		return
 	}
 
-	rev, err := strconv.Atoi(endpoint.ObjectMeta.ResourceVersion)
-	if err != nil {
-		log.Errorln(err)
-		return
-	}
-	endpoint.SetResourceVersion(fmt.Sprintf("%d", rev+1))
 	// lets update the workloadEndpoint
 	_, err = d.client.WorkloadEndpoints().Update(ctx, endpoint, options.SetOptions{})
 	if err != nil {
 		err = errors.Wrapf(err, "Unable to update WorkloadEndpoint with labels (T=%s)", time.Since(start))
-		log.Errorln(err)
-		return
+		log.Warningln(err)
+		endpoint, err = d.client.WorkloadEndpoints().Get(ctx, endpoint.Namespace, endpoint.Name, options.GetOptions{})
+		if err != nil {
+			err = errors.Wrapf(err, "Unable to get WorkloadEndpoint (T=%s)", time.Since(start))
+			log.Errorln(err)
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+		goto RETRY_UPDATE_ENDPOINT
 	}
 
 	log.Infof("WorkloadEndpoint %s updated with labels: %v (T=%s)",
