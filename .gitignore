@@ -1,5 +1,6 @@
-minions
-eru-minions
+./minions
+./eru-minions
+target/
 .ropeproject
 build.yaml
 *.pyc

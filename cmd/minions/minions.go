@@ -3,13 +3,18 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/codegangsta/cli"
+	etcdClientV3 "github.com/coreos/etcd/clientv3"
+	dockerClient "github.com/docker/docker/client"
 	"github.com/docker/go-plugins-helpers/ipam"
 	"github.com/docker/go-plugins-helpers/network"
+	"github.com/pkg/errors"
 	"github.com/projectcalico/libcalico-go/lib/apiconfig"
 	"github.com/projectcalico/libcalico-go/lib/clientv3"
-	"github.com/projecteru2/minions/driver"
+	"github.com/projecteru2/minions/internal/driver"
 	"github.com/projecteru2/minions/versioninfo"
 	log "github.com/sirupsen/logrus"
 )
@@ -19,11 +24,24 @@ var (
 	ipamName string
 	debug    bool
 
-	config *apiconfig.CalicoAPIConfig
-	client clientv3.Interface
+	config    *apiconfig.CalicoAPIConfig
+	client    clientv3.Interface
+	dockerCli *dockerClient.Client
+	ripam     driver.ReservedIPManager
+)
+
+const (
+	clientTimeout    = 10 * time.Second
+	keepaliveTime    = 30 * time.Second
+	keepaliveTimeout = 10 * time.Second
 )
 
 func initializeClient() {
+	if debug {
+		log.SetLevel(log.DebugLevel)
+		log.Debugln("Debug logging enabled")
+	}
+
 	var err error
 
 	if config, err = apiconfig.LoadClientConfig(""); err != nil {
@@ -33,9 +51,18 @@ func initializeClient() {
 		panic(err)
 	}
 
-	if debug {
-		log.SetLevel(log.DebugLevel)
-		log.Debugln("Debug logging enabled")
+	if dockerCli, err = dockerClient.NewEnvClient(); err != nil {
+		log.Fatal(errors.Wrap(err, "Error while attempting to instantiate docker client from env"))
+	}
+
+	// config.Spec.EtcdConfig.EtcdEndpoints is already checked in clientV3.New
+	if ripam, err = driver.NewReservedIPManager(etcdClientV3.Config{
+		Endpoints:            strings.Split(config.Spec.EtcdConfig.EtcdEndpoints, ","),
+		DialTimeout:          clientTimeout,
+		DialKeepAliveTime:    keepaliveTime,
+		DialKeepAliveTimeout: keepaliveTimeout,
+	}); err != nil {
+		panic(err)
 	}
 }
 
@@ -43,8 +70,8 @@ func serve() {
 	initializeClient()
 
 	errChannel := make(chan error)
-	networkHandler := network.NewHandler(driver.NewNetworkDriver(client))
-	ipamHandler := ipam.NewHandler(driver.NewIpamDriver(client))
+	networkHandler := network.NewHandler(driver.NewNetworkDriver(client, dockerCli, ripam))
+	ipamHandler := ipam.NewHandler(driver.NewIpamDriver(client, ripam))
 
 	go func(c chan error) {
 		log.Infoln("calico-net has started.")

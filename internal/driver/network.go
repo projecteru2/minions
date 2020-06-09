@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	dockerTypes "github.com/docker/docker/api/types"
 	dockerClient "github.com/docker/docker/client"
 	"github.com/docker/go-plugins-helpers/network"
 	"github.com/pkg/errors"
@@ -41,6 +42,8 @@ const (
 
 type NetworkDriver struct {
 	client         clientv3.Interface
+	dockerCli      *dockerClient.Client
+	ripam          ReservedIPManager
 	containerName  string
 	orchestratorID string
 	namespace      string
@@ -57,7 +60,13 @@ type NetworkDriver struct {
 	labelEndpoints bool
 }
 
-func NewNetworkDriver(client clientv3.Interface) network.Driver {
+type containerAndIPAddress struct {
+	container dockerTypes.Container
+	ipAddress string
+}
+
+// NewNetworkDriver .
+func NewNetworkDriver(client clientv3.Interface, dockerCli *dockerClient.Client, ripam ReservedIPManager) network.Driver {
 	hostname, err := osutils.GetHostname()
 	if err != nil {
 		err = errors.Wrap(err, "Hostname fetching error")
@@ -65,7 +74,9 @@ func NewNetworkDriver(client clientv3.Interface) network.Driver {
 	}
 
 	driver := NetworkDriver{
-		client: client,
+		client:    client,
+		dockerCli: dockerCli,
+		ripam:     ripam,
 
 		// Orchestrator and container IDs used in our endpoint identification. These
 		// are fixed for libnetwork.  Unique endpoint identification is provided by
@@ -258,6 +269,31 @@ func (d NetworkDriver) populatePoolLabel(pools []string, networkID string) error
 func (d NetworkDriver) DeleteNetwork(request *network.DeleteNetworkRequest) error {
 	logutils.JSONMessage("DeleteNetwork", request)
 	return nil
+}
+
+func (d NetworkDriver) findDockerContainerByEndpointId(endpointID string) (containerAndIPAddress, error) {
+	containers, err := d.dockerCli.ContainerList(context.Background(), dockerTypes.ContainerListOptions{})
+	if err != nil {
+		err = errors.Wrap(err, "dockerCli ContainerList Error")
+		log.Errorln(err)
+		return containerAndIPAddress{}, err
+	}
+	for _, container := range containers {
+		for _, network := range container.NetworkSettings.Networks {
+			if endpointID == network.EndpointID {
+				return containerAndIPAddress{container, network.IPAddress}, nil
+			}
+		}
+	}
+	return containerAndIPAddress{}, errors.Errorf("find no container with endpintID = %s", endpointID)
+}
+
+func (containerAndIP containerAndIPAddress) reserveOrReleaseIPByFixedIPLabel(ripam ReservedIPManager) error {
+	_, fixedIP := containerAndIP.container.Labels[fixedIPLabel]
+	if fixedIP {
+		return ripam.MarkReservedIP(context.Background(), containerAndIP.ipAddress)
+	}
+	return ripam.ReleaseReservedIP(context.Background(), containerAndIP.ipAddress)
 }
 
 func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*network.CreateEndpointResponse, error) {
@@ -528,9 +564,15 @@ func (d NetworkDriver) Join(request *network.JoinRequest) (*network.JoinResponse
 
 func (d NetworkDriver) Leave(request *network.LeaveRequest) error {
 	logutils.JSONMessage("Leave response", request)
+	containerAndIP, err := d.findDockerContainerByEndpointId(request.EndpointID)
+	if err != nil {
+		return err
+	}
+	// reserve ip here by container label
+	containerAndIP.reserveOrReleaseIPByFixedIPLabel(d.ripam)
+
 	caliName := "cali" + request.EndpointID[:mathutils.MinInt(11, len(request.EndpointID))]
-	err := netns.RemoveVeth(caliName)
-	return err
+	return netns.RemoveVeth(caliName)
 }
 
 func (d NetworkDriver) DiscoverNew(request *network.DiscoveryNotification) error {
@@ -578,13 +620,13 @@ func (d NetworkDriver) populateWorkloadEndpointWithLabels(request *network.Creat
 	deadline := start.Add(d.labelPollTimeout)
 
 	os.Setenv("DOCKER_API_VERSION", "1.25")
-	dockerCli, err := dockerClient.NewEnvClient()
-	if err != nil {
-		err = errors.Wrap(err, "Error while attempting to instantiate docker client from env")
-		log.Errorln(err)
-		return
-	}
-	defer dockerCli.Close()
+	// dockerCli, err := dockerClient.NewEnvClient()
+	// if err != nil {
+	// 	err = errors.Wrap(err, "Error while attempting to instantiate docker client from env")
+	// 	log.Errorln(err)
+	// 	return
+	// }
+	// defer dockerCli.Close()
 
 RETRY_NETWORK_INSPECT:
 	if time.Now().After(deadline) {
@@ -593,7 +635,7 @@ RETRY_NETWORK_INSPECT:
 	}
 
 	// inspect our custom network
-	networkData, err := dockerCli.NetworkInspect(ctx, networkID, dockertypes.NetworkInspectOptions{})
+	networkData, err := d.dockerCli.NetworkInspect(ctx, networkID, dockertypes.NetworkInspectOptions{})
 	if err != nil {
 		err = errors.Wrapf(err, "Error inspecting network %s - retrying (T=%s)", networkID, time.Since(start))
 		log.Warningln(err)
@@ -641,7 +683,7 @@ RETRY_CONTAINER_INSPECT:
 		return
 	}
 
-	containerInfo, err := dockerCli.ContainerInspect(ctx, containerID)
+	containerInfo, err := d.dockerCli.ContainerInspect(ctx, containerID)
 	if err != nil {
 		err = errors.Wrapf(err, "Error inspecting container %s for labels - retrying (T=%s)", containerID, time.Since(start))
 		log.Warningln(err)
