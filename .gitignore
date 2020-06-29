@@ -1,6 +1,8 @@
+.DS_Store
 ./minions
 ./eru-minions
 target/
+dist/
 .ropeproject
 build.yaml
 *.pyc
