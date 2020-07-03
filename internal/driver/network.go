@@ -60,11 +60,6 @@ type NetworkDriver struct {
 	labelEndpoints bool
 }
 
-type containerAndIPAddress struct {
-	container dockerTypes.Container
-	ipAddress string
-}
-
 // NewNetworkDriver .
 func NewNetworkDriver(client clientv3.Interface, dockerCli *dockerClient.Client, ripam ReservedIPManager) network.Driver {
 	hostname, err := osutils.GetHostname()
@@ -151,7 +146,7 @@ func (d NetworkDriver) CreateNetwork(request *network.CreateNetworkRequest) erro
 	// Reject all options (--internal, --enable_ipv6, etc)
 	for k, v := range request.Options {
 		skip := false
-		for known, _ := range knownOpts {
+		for known := range knownOpts {
 			if k == known {
 				skip = true
 				break
@@ -170,7 +165,6 @@ func (d NetworkDriver) CreateNetwork(request *network.CreateNetworkRequest) erro
 			optionSet = v
 			flagName = "--" + strings.TrimPrefix(k, "com.docker.network.")
 			flagValue = ""
-			break
 		case map[string]interface{}:
 			optionSet = len(v) != 0
 			flagName = ""
@@ -189,7 +183,6 @@ func (d NetworkDriver) CreateNetwork(request *network.CreateNetworkRequest) erro
 			multipleFlags = numFlags > 1
 			flagName = strings.TrimSuffix(flagName, ", ")
 			flagValue = ""
-			break
 		default:
 			// for unknown case let optionSet = true
 			optionSet = true
@@ -271,29 +264,26 @@ func (d NetworkDriver) DeleteNetwork(request *network.DeleteNetworkRequest) erro
 	return nil
 }
 
-func (d NetworkDriver) findDockerContainerByEndpointId(endpointID string) (containerAndIPAddress, error) {
+func (d NetworkDriver) findDockerContainerByEndpointId(endpointID string) (dockerTypes.Container, string, error) {
 	containers, err := d.dockerCli.ContainerList(context.Background(), dockerTypes.ContainerListOptions{})
 	if err != nil {
 		err = errors.Wrap(err, "dockerCli ContainerList Error")
 		log.Errorln(err)
-		return containerAndIPAddress{}, err
+		return dockerTypes.Container{}, "", err
 	}
 	for _, container := range containers {
 		for _, network := range container.NetworkSettings.Networks {
 			if endpointID == network.EndpointID {
-				return containerAndIPAddress{container, network.IPAddress}, nil
+				return container, network.IPAddress, nil
 			}
 		}
 	}
-	return containerAndIPAddress{}, errors.Errorf("find no container with endpintID = %s", endpointID)
+	return dockerTypes.Container{}, "", errors.Errorf("find no container with endpintID = %s", endpointID)
 }
 
-func (containerAndIP containerAndIPAddress) reserveOrReleaseIPByFixedIPLabel(ripam ReservedIPManager) error {
-	_, fixedIP := containerAndIP.container.Labels[fixedIPLabel]
-	if fixedIP {
-		return ripam.MarkReservedIP(context.Background(), containerAndIP.ipAddress)
-	}
-	return ripam.ReleaseReservedIP(context.Background(), containerAndIP.ipAddress)
+func containerHasFixedIPLabel(container dockerTypes.Container) bool {
+	value, hasFixedIPLabel := container.Labels[fixedIPLabel]
+	return hasFixedIPLabel && value != "false"
 }
 
 func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*network.CreateEndpointResponse, error) {
@@ -548,6 +538,7 @@ func (d NetworkDriver) Join(request *network.JoinRequest) (*network.JoinResponse
 	if linkLocalAddr == nil {
 		log.Warnf("No IPv6 link local address for %s", hostInterfaceName)
 	} else {
+		//nolint:gosimple
 		resp.GatewayIPv6 = fmt.Sprintf("%s", linkLocalAddr)
 		nextHopIPv6 := fmt.Sprintf("%s/128", linkLocalAddr)
 		resp.StaticRoutes = append(resp.StaticRoutes, &network.StaticRoute{
@@ -564,12 +555,16 @@ func (d NetworkDriver) Join(request *network.JoinRequest) (*network.JoinResponse
 
 func (d NetworkDriver) Leave(request *network.LeaveRequest) error {
 	logutils.JSONMessage("Leave response", request)
-	containerAndIP, err := d.findDockerContainerByEndpointId(request.EndpointID)
+	container, address, err := d.findDockerContainerByEndpointId(request.EndpointID)
 	if err != nil {
 		return err
 	}
 	// reserve ip here by container label
-	containerAndIP.reserveOrReleaseIPByFixedIPLabel(d.ripam)
+	if containerHasFixedIPLabel(container) {
+		if err := d.ripam.Reserve(address, container.ID); err != nil {
+			log.Errorln(err)
+		}
+	}
 
 	caliName := "cali" + request.EndpointID[:mathutils.MinInt(11, len(request.EndpointID))]
 	return netns.RemoveVeth(caliName)

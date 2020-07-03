@@ -4,17 +4,18 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/codegangsta/cli"
-	etcdClientV3 "github.com/coreos/etcd/clientv3"
 	dockerClient "github.com/docker/docker/client"
 	"github.com/docker/go-plugins-helpers/ipam"
 	"github.com/docker/go-plugins-helpers/network"
 	"github.com/pkg/errors"
 	"github.com/projectcalico/libcalico-go/lib/apiconfig"
 	"github.com/projectcalico/libcalico-go/lib/clientv3"
+
+	etcdV3 "github.com/coreos/etcd/clientv3"
 	"github.com/projecteru2/minions/internal/driver"
+	"github.com/projecteru2/minions/lib"
 	"github.com/projecteru2/minions/versioninfo"
 	log "github.com/sirupsen/logrus"
 )
@@ -27,13 +28,7 @@ var (
 	config    *apiconfig.CalicoAPIConfig
 	client    clientv3.Interface
 	dockerCli *dockerClient.Client
-	ripam     driver.ReservedIPManager
-)
-
-const (
-	clientTimeout    = 10 * time.Second
-	keepaliveTime    = 30 * time.Second
-	keepaliveTimeout = 10 * time.Second
+	etcd      *etcdV3.Client
 )
 
 func initializeClient() {
@@ -51,18 +46,12 @@ func initializeClient() {
 		panic(err)
 	}
 
-	if dockerCli, err = dockerClient.NewEnvClient(); err != nil {
-		log.Fatal(errors.Wrap(err, "Error while attempting to instantiate docker client from env"))
+	if dockerCli, err = dockerClient.NewClientWithOpts(dockerClient.FromEnv); err != nil {
+		log.Fatalln(errors.Wrap(err, "Error while attempting to instantiate docker client from env"))
 	}
 
-	// config.Spec.EtcdConfig.EtcdEndpoints is already checked in clientV3.New
-	if ripam, err = driver.NewReservedIPManager(etcdClientV3.Config{
-		Endpoints:            strings.Split(config.Spec.EtcdConfig.EtcdEndpoints, ","),
-		DialTimeout:          clientTimeout,
-		DialKeepAliveTime:    keepaliveTime,
-		DialKeepAliveTimeout: keepaliveTimeout,
-	}); err != nil {
-		panic(err)
+	if etcd, err = lib.NewEtcdClient(strings.Split(config.Spec.EtcdConfig.EtcdEndpoints, ",")); err != nil {
+		log.Fatalln(err)
 	}
 }
 
@@ -70,6 +59,8 @@ func serve() {
 	initializeClient()
 
 	errChannel := make(chan error)
+
+	ripam := driver.NewReservedIPManager(etcd)
 	networkHandler := network.NewHandler(driver.NewNetworkDriver(client, dockerCli, ripam))
 	ipamHandler := ipam.NewHandler(driver.NewIpamDriver(client, ripam))
 
@@ -128,5 +119,7 @@ func main() {
 		return nil
 	}
 
-	app.Run(os.Args)
+	if err := app.Run(os.Args); err != nil {
+		log.Fatalln(err)
+	}
 }

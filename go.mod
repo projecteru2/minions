@@ -11,7 +11,7 @@ require (
 	github.com/codegangsta/cli v1.20.0
 	github.com/coreos/etcd v3.3.8+incompatible
 	github.com/coreos/go-systemd v0.0.0-20161114122254-48702e0da86b
-	github.com/davecgh/go-spew v1.1.1-0.20170626231645-782f4967f2dc
+	github.com/davecgh/go-spew v1.1.1
 	github.com/dgrijalva/jwt-go v3.0.0+incompatible
 	github.com/docker/distribution v2.6.0-rc.1.0.20171207180435-f4118485915a+incompatible
 	github.com/docker/docker v17.12.0-ce-rc1.0.20180616010903-de0abf4315fd+incompatible
@@ -25,9 +25,9 @@ require (
 	github.com/go-openapi/jsonreference v0.0.0-20160704190145-13c6e3589ad9
 	github.com/go-openapi/spec v0.0.0-20160808142527-6aced65f8501
 	github.com/go-openapi/swag v0.0.0-20160704191624-1d0bd113de87
-	github.com/gogo/protobuf v0.0.0-20170330071051-c0656edd0d9e
+	github.com/gogo/protobuf v1.1.1
 	github.com/golang/glog v0.0.0-20141105023935-44145f04b68c
-	github.com/golang/protobuf v0.0.0-20161109072736-4bd1920723d7
+	github.com/golang/protobuf v1.3.2
 	github.com/google/btree v0.0.0-20161005200959-925471ac9e21
 	github.com/google/gofuzz v0.0.0-20161122191042-44d81051d367
 	github.com/googleapis/gnostic v0.0.0-20170426233943-68f4ded48ba9
@@ -36,7 +36,7 @@ require (
 	github.com/hashicorp/golang-lru v0.0.0-20160207214719-a0d98a5f2880
 	github.com/howeyc/gopass v0.0.0-20170109162249-bf9dde6d0d2c
 	github.com/imdario/mergo v0.0.0-20141206190957-6633656539c1
-	github.com/json-iterator/go v0.0.0-20170829155851-36b14963da70
+	github.com/json-iterator/go v1.1.6
 	github.com/juju/ratelimit v0.0.0-20170523012141-5b9ff8664717
 	github.com/kelseyhightower/envconfig v1.3.0
 	github.com/mailru/easyjson v0.0.0-20160728113105-d5b7844b561a
@@ -44,28 +44,29 @@ require (
 	github.com/opencontainers/image-spec v1.0.1-0.20180411145040-e562b0440392
 	github.com/pborman/uuid v0.0.0-20150603214016-ca53cad383ca
 	github.com/peterbourgon/diskv v2.0.1+incompatible
-	github.com/pkg/errors v0.8.1-0.20171210022416-8842a6e0cc59
+	github.com/pkg/errors v0.8.1
 	github.com/projectcalico/go-json v0.0.0-20161128004156-6219dc7339ba
 	github.com/projectcalico/go-yaml v0.0.0-20161201183616-955bc3e451ef
 	github.com/projectcalico/go-yaml-wrapper v0.0.0-20161127220527-598e54215bee
 	github.com/projectcalico/libcalico-go v2.0.0-alpha1.0.20180615230155-efdf8fede805+incompatible
 	github.com/projectcalico/libnetwork-plugin v1.1.3-0.20180524185918-f42c4fce3cdb
+	github.com/prometheus/common v0.10.0
 	github.com/satori/go.uuid v1.2.0
-	github.com/sirupsen/logrus v1.0.5
+	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/pflag v0.0.0-20170130214245-9ff6c6923cff
 	github.com/vishvananda/netlink v0.0.0-20171214173445-54ad9e3a4cbb
 	github.com/vishvananda/netns v0.0.0-20171111001504-be1fbeda1936
-	golang.org/x/crypto v0.0.0-20170930174604-9419663f5a44
-	golang.org/x/net v0.0.0-20170809000501-1c05540f6879
+	golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2
+	golang.org/x/net v0.0.0-20190613194153-d28f0bde5980
 	golang.org/x/oauth2 v0.0.0-20170412232759-a6bd8cefa181
-	golang.org/x/sys v0.0.0-20171006175012-ebfc5b463182
-	golang.org/x/text v0.0.0-20170810154203-b19bf474d317
+	golang.org/x/sys v0.0.0-20190422165155-953cdadca894
+	golang.org/x/text v0.3.0
 	google.golang.org/appengine v0.0.0-20160823001527-4f7eeb5305a4
 	google.golang.org/genproto v0.0.0-20170731182057-09f6ed296fc6
 	google.golang.org/grpc v1.7.5
 	gopkg.in/go-playground/validator.v8 v8.18.1
 	gopkg.in/inf.v0 v0.9.0
-	gopkg.in/yaml.v2 v2.0.0-20150924142314-53feefa2559f
+	gopkg.in/yaml.v2 v2.2.4
 	k8s.io/api v0.0.0-20180510182548-a315a049e7a9
 	k8s.io/apimachinery v0.0.0-20180510182146-40eaf68ee188
 	k8s.io/client-go v0.0.0-20170922112243-82aa063804cf
