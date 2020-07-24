@@ -13,6 +13,7 @@ import (
 // Client .
 type Client interface {
 	ReleaseReservedIPByTiedContainerIDIfIdle(containerID string) error
+	MarkReserveRequestForIP(ip string) error
 }
 
 type client struct {
@@ -57,4 +58,13 @@ func (client client) ReleaseReservedIPByTiedContainerIDIfIdle(containerID string
 	}
 
 	return nil
+}
+
+func (client client) MarkReserveRequestForIP(ip string) (err error) {
+	var reserved bool
+	request := ReservedIPAddress{Address: ip}
+	if reserved, err = client.etcd.Get(&request); reserved || err != nil {
+		return
+	}
+	return client.etcd.Put(&request)
 }

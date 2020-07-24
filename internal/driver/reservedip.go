@@ -18,6 +18,8 @@ type ReservedIPManager interface {
 	Reserve(ip string, containerID string) error
 	AquireIfReserved(ip string) (bool, error)
 	IsReserved(ip string) (bool, error)
+	// marked is not guaranteed to be false when err is not nil
+	ConsumeRequestMarkIfPresent(ip string) (marked bool, err error)
 }
 
 // NewReservedIPManager .
@@ -34,6 +36,11 @@ func (ripam reservedIPManager) Reserve(ip string, containerID string) error {
 // IsReserved .
 func (ripam reservedIPManager) IsReserved(ip string) (bool, error) {
 	return ripam.etcd.Get(&lib.ReservedIPAddress{Address: ip})
+}
+
+// IsRequested .
+func (ripam reservedIPManager) ConsumeRequestMarkIfPresent(ip string) (bool, error) {
+	return ripam.etcd.GetAndDelete(&lib.ReserveRequest{Address: ip})
 }
 
 // AquireIfReserved .
