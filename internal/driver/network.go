@@ -553,21 +553,45 @@ func (d NetworkDriver) Join(request *network.JoinRequest) (*network.JoinResponse
 	return resp, nil
 }
 
+// Leave .
 func (d NetworkDriver) Leave(request *network.LeaveRequest) error {
 	logutils.JSONMessage("Leave response", request)
-	container, address, err := d.findDockerContainerByEndpointId(request.EndpointID)
-	if err != nil {
+	var (
+		container       dockerTypes.Container
+		address         string
+		shouldReserveIP bool
+		err             error
+	)
+	if container, address, err = d.findDockerContainerByEndpointId(request.EndpointID); err != nil {
 		return err
 	}
-	// reserve ip here by container label
-	if containerHasFixedIPLabel(container) {
-		if err := d.ripam.Reserve(address, container.ID); err != nil {
+	if shouldReserveIP, err = d.shouldReserveIP(container, address); err != nil {
+		// we move on when trying to find out whether should reserve by reserve request mark
+		log.Errorln(err)
+	}
+	if shouldReserveIP {
+		if err = d.ripam.Reserve(address, container.ID); err != nil {
+			// we move on when reserve is failed
 			log.Errorln(err)
 		}
 	}
 
 	caliName := "cali" + request.EndpointID[:mathutils.MinInt(11, len(request.EndpointID))]
 	return netns.RemoveVeth(caliName)
+}
+
+func (d NetworkDriver) shouldReserveIP(container dockerTypes.Container, address string) (shouldReserve bool, err error) {
+	// reserve ip here by container label
+	if containerHasFixedIPLabel(container) {
+		shouldReserve = true
+		return
+	}
+	// reserve ip here by reserve request mark
+	if shouldReserve, err = d.ripam.ConsumeRequestMarkIfPresent(address); err != nil {
+		// ensure shouldReserve is false here when err is not nil
+		shouldReserve = false
+	}
+	return
 }
 
 func (d NetworkDriver) DiscoverNew(request *network.DiscoveryNotification) error {
