@@ -159,6 +159,16 @@ func (i IpamDriver) RequestAddress(request *ipam.RequestAddressRequest) (*ipam.R
 		return nil, err
 	}
 
+	// we should remove the request mark
+	ip := fmt.Sprintf("%v", address)
+	if _, err := i.ripam.ConsumeRequestMarkIfPresent(ip); err != nil {
+		// Do not continue, or else the mark will cause some undefined behavior
+		log.Errorf("[IPAM.RequestAddress] remove request mark of ip(%v) error, %v", ip, err)
+		return nil, err
+	} else {
+		log.Infof("[IPAM.RequestAddress] removed request mark on ip(%v) allocated", ip)
+	}
+
 	resp := &ipam.RequestAddressResponse{
 		// Return the IP as a CIDR.
 		Address: formatIPAddress(address),

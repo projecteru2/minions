@@ -584,13 +584,27 @@ func (d NetworkDriver) shouldReserveIP(container dockerTypes.Container, address 
 	// reserve ip here by container label
 	if containerHasFixedIPLabel(container) {
 		shouldReserve = true
+		// we should consume the mark
+		if _, err := d.ripam.ConsumeRequestMarkIfPresent(address); err != nil {
+			log.Errorf("[Network.ConsumeRequestMarkIfPresent] remove request mark error, %v", err)
+		}
+		log.Infof("[Network.ConsumeRequestMarkIfPresent] container has fixed-ip label, shouldReserve ip(%s) = %v", address, shouldReserve)
 		return
 	}
 	// reserve ip here by reserve request mark
 	if shouldReserve, err = d.ripam.ConsumeRequestMarkIfPresent(address); err != nil {
 		// ensure shouldReserve is false here when err is not nil
+		log.Errorf("[Network.ConsumeRequestMarkIfPresent] error, %v", err)
 		shouldReserve = false
+		return
 	}
+	var msg string
+	if shouldReserve {
+		msg = "marked as requested"
+	} else {
+		msg = "not marked as requested"
+	}
+	log.Infof("[Network.ConsumeRequestMarkIfPresent] address is %s, shouldReserve ip(%s) = %v", msg, address, shouldReserve)
 	return
 }
 
