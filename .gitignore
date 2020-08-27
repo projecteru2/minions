@@ -1,6 +1,6 @@
 .DS_Store
 ./minions
-./eru-minions
+eru-minions
 target/
 dist/
 .ropeproject
@@ -14,3 +14,5 @@ clean.sh
 test*.py
 set*
 test.yaml
+minions
+
