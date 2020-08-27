@@ -1,5 +1,4 @@
 FROM golang:1.14.3-alpine3.11 AS BUILD
-
 LABEL MAINTAINER="CMGS <ilskdw@gmail.com>"
 
 # make binary
@@ -9,7 +8,6 @@ COPY . /go/src/github.com/projecteru2/minions/
 RUN make build && ./eru-minions --version
 
 FROM alpine:3.11
-
 LABEL MAINTAINER="CMGS <ilskdw@gmail.com>"
 
 RUN mkdir /etc/eru/

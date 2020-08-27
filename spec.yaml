@@ -6,25 +6,24 @@ entrypoints:
     privileged: true
 volumes:
   - "/var/run/docker/plugins/:/var/run/docker/plugins"
+
 stages:
   - build
   - pack
 builds:
   build:
-    base: "golang:1.10.3-alpine3.8"
-    # only support ssh protocol
+    base: "golang:alpine"
     repo: "git@github.com:projecteru2/minions.git"
     version: "HEAD"
     dir: /go/src/github.com/projecteru2/minions
     commands:
       - apk add --no-cache git ca-certificates curl make alpine-sdk linux-headers
-      - curl https://glide.sh/get | sh
       - make build
       - ./eru-minions --version
     cache:
       /go/src/github.com/projecteru2/minions/eru-minions: /usr/bin/eru-minions
   pack:
-    base: alpine:3.8
+    base: alpine
     labels:
       ERU: 1
       version: latest
