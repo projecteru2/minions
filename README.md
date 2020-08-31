@@ -47,7 +47,7 @@ After we implemented bootstrap in eru2, now you can build and deploy minions wit
 1. Test source code and build image
 
 ```shell
-<cli_execute_path> --name <image_name> https://goo.gl/P6AH7x
+<cli_execute_path> --name <image_name> https://bit.ly/EruMinions
 ```
 
 Make sure you can clone code by ssh protocol because libgit2 ask for it. So you need configure core with github certs. After the fresh image was named and tagged, it will be auto pushed to the remote registry which was defined in core.
@@ -55,7 +55,7 @@ Make sure you can clone code by ssh protocol because libgit2 ask for it. So you 
 2. Deploy minions by eru with specific resource.
 
 ```shell
-<cli_execute_path> container deploy --pod <pod_name> --entry minions --network <network_name> --deploy-method fill --image <projecteru2/minions>|<your_own_image> --count 1 --env ETCD_ENDPOINTS=${ETCD_ENDPOINTS} [--cpu 0.3 | --mem 1024000000] https://goo.gl/P6AH7x
+<cli_execute_path> container deploy --pod <pod_name> --entry minions --network <network_name> --deploy-method fill --image <projecteru2/minions>|<your_own_image> --count 1 --env ETCD_ENDPOINTS=${ETCD_ENDPOINTS} [--cpu 0.3 | --mem 1024000000] https://bit.ly/EruMinions
 ```
 
 Now you will find minions was started in each node.
