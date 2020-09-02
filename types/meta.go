@@ -6,10 +6,10 @@ type ReservedAddress struct {
 	Address string
 }
 
-// Container .
+// ContainerInfo .
 type ContainerInfo struct {
-	ID string
-	ReservedAddress
+	ID        string
+	Addresses []ReservedAddress
 }
 
 // ReserveRequest .

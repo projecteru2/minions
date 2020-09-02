@@ -26,7 +26,7 @@ func NewCalicoIPAM(cliv3 clientv3.Interface) *CalicoIPAM {
 }
 
 // AssignIP .
-func (c CalicoIPAM) AssignIP(poolName string, address string) (caliconet.IP, error) {
+func (c CalicoIPAM) AssignIP(address string) (caliconet.IP, error) {
 	var err error
 
 	var hostname string
@@ -190,6 +190,48 @@ func (c CalicoIPAM) RequestPool(cidr string) (*types.Pool, error) {
 
 	return nil, errors.Errorf("The requested subnet(%s) didn't match any CIDR of a "+
 		"configured Calico IP Pool.", cidr)
+}
+
+// RequestPools .
+func (c CalicoIPAM) RequestPools(cidrs []string) ([]*types.Pool, error) {
+	var (
+		ipNets = make(map[string]*caliconet.IPNet)
+		pools  *apiv3.IPPoolList
+		result []*types.Pool
+		err    error
+	)
+	for _, cidr := range cidrs {
+		var ipNet *caliconet.IPNet
+		if _, ipNet, err = caliconet.ParseCIDR(cidr); err != nil {
+			log.Errorf("Invalid CIDR: %s, %v", cidr, err)
+			return nil, err
+		}
+		ipNets[ipNet.String()] = ipNet
+	}
+	if pools, err = c.IPPools(); err != nil {
+		log.Errorf("[CalicoDriver::RequestPool] Get pools error, %v", err)
+		return nil, err
+	}
+	for _, p := range pools.Items {
+		if ipNet, ok := ipNets[p.Spec.CIDR]; ok {
+			var gateway string
+			if ipNet.Version() == 4 {
+				gateway = "0.0.0.0/0"
+			} else {
+				gateway = "::/0"
+			}
+			result = append(result, &types.Pool{
+				CIDR:    p.Spec.CIDR,
+				Name:    p.Name,
+				Gateway: gateway,
+			})
+		}
+	}
+	if len(result) == 0 {
+		return nil, errors.Errorf("The requested subnets(%v) didn't match any CIDR of a "+
+			"configured Calico IP Pool.", cidrs)
+	}
+	return result, nil
 }
 
 // RequestDefaultPool .

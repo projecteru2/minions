@@ -195,5 +195,5 @@ func (i IPAMDriver) requestIP(request *pluginIPAM.RequestAddressRequest) (calico
 		return caliconet.IP{IP: net.ParseIP(request.Address)}, nil
 	}
 	// assign IP from calico
-	return i.calicoIPAM.AssignIP(request.PoolID, request.Address)
+	return i.calicoIPAM.AssignIP(request.Address)
 }

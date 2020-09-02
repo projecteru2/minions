@@ -35,12 +35,14 @@ type Etcd struct {
 type Encoder interface {
 	Key() string
 	Encode() (string, error)
+	Version() int64
 }
 
 // Decoder .
 type Decoder interface {
 	Key() string
 	Decode(string) error
+	SetVersion(int64)
 }
 
 // Codec .
@@ -66,18 +68,20 @@ func NewEtcdClient(ctx context.Context, config apiconfig.CalicoAPIConfig) (*Etcd
 }
 
 // Get .
-func (e *Etcd) Get(ctx context.Context, decoder Decoder, opts ...clientv3.OpOption) (bool, error) {
+func (e *Etcd) Get(ctx context.Context, decoder Decoder) (bool, error) {
 	var (
 		resp *clientv3.GetResponse
 		err  error
 	)
-	if resp, err = e.cliv3.Get(ctx, decoder.Key(), opts...); err != nil {
+	if resp, err = e.cliv3.Get(ctx, decoder.Key()); err != nil {
 		return false, err
 	}
 	if len(resp.Kvs) == 0 {
 		return false, nil
 	}
-	err = decoder.Decode(string(resp.Kvs[0].Value))
+	kv := resp.Kvs[0]
+	err = decoder.Decode(string(kv.Value))
+	decoder.SetVersion(kv.Version)
 	return err == nil, err
 }
 
@@ -106,10 +110,58 @@ func (e *Etcd) Delete(ctx context.Context, encoder Encoder) (bool, error) {
 		resp *clientv3.DeleteResponse
 		err  error
 	)
+	if key == "" {
+		return false, ErrKeyIsBlank
+	}
 	if resp, err = e.cliv3.Delete(ctx, key, clientv3.WithPrevKV()); err != nil {
 		return false, err
 	}
 	return len(resp.PrevKvs) > 0, nil
+}
+
+// GetAndDelete delete key, and return value
+// returns true on delete count > 0
+func (e *Etcd) GetAndDelete(ctx context.Context, decoder Decoder) (bool, error) {
+	var (
+		key  = decoder.Key()
+		resp *clientv3.DeleteResponse
+		err  error
+	)
+	if key == "" {
+		return false, ErrKeyIsBlank
+	}
+	if resp, err = e.cliv3.Delete(ctx, key, clientv3.WithPrevKV()); err != nil {
+		return false, err
+	}
+	if len(resp.PrevKvs) == 0 {
+		return false, nil
+	}
+	err = decoder.Decode(string(resp.PrevKvs[0].Value))
+	return err == nil, err
+}
+
+// Update .
+func (e *Etcd) Update(ctx context.Context, encoder Encoder) (bool, error) {
+	var (
+		value string
+		err   error
+		resp  *clientv3.TxnResponse
+	)
+	if value, err = encoder.Encode(); err != nil {
+		return false, err
+	}
+	key := encoder.Key()
+	prevVersion := encoder.Version()
+	if resp, err = e.cliv3.Txn(
+		ctx,
+	).If(
+		clientv3.Compare(clientv3.Version(key), "=", prevVersion),
+	).Then(
+		clientv3.OpPut(key, value),
+	).Commit(); err != nil {
+		return false, err
+	}
+	return resp.Succeeded, err
 }
 
 // PutMulti .
